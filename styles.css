@@ -142,49 +142,16 @@ tfoot td { font-weight: 700; background: #eef3f6; }
   background: #fff; cursor: pointer; color: var(--ink); font-size: 13px;
 }
 
-/* ---------------- SUMMARY / METRIC CARDS (FIXED) ---------------- */
 .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-
 .metric {
-  background: #ffffff; 
-  border: 1px solid var(--line);
-  border-radius: var(--radius); 
-  padding: 10px 16px; 
-  min-width: 150px;
-  /* Ensure light background so dark text is readable */
+  background: #ffffff; border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 16px; min-width: 150px;
 }
-
-.metric-label { 
-  font-size: 11.5px; 
-  color: var(--ink-soft); /* This is dark gray, not white */
-  text-transform: uppercase; 
-  letter-spacing: 0.4px; 
-}
-
-.metric-value { 
-  font-size: 21px; 
-  font-weight: 700; 
-  margin-top: 3px;
-  color: var(--ink); /* <<--- FORCES TEXT TO BE DARK (BLACK) */
-}
-
+.metric-label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; }
+.metric-value { font-size: 21px; font-weight: 700; margin-top: 3px; color: var(--ink); }
 .metric.good .metric-value { color: var(--pass); }
 .metric.bad  .metric-value { color: var(--fail); }
 
-/* ---------------- HIDE ALL BLUE CIRCLES / SPINNERS ---------------- */
-.spinner,
-.loader,
-.status-dot,
-.circle,
-.circle-indicator,
-[class*="spinner"],
-[class*="loader"],
-[class*="dot"],
-[class*="circle"] {
-    display: none !important;
-}
-
-/* ---------------- charts & bars ---------------- */
 .bar-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 13px; }
 .bar-label { width: 190px; flex: 0 0 auto; }
 .bar-track { flex: 1; height: 18px; background: #e8eef2; border-radius: 3px; overflow: hidden; }
@@ -204,3 +171,64 @@ tfoot td { font-weight: 700; background: #eef3f6; }
   opacity: 0; transition: all 0.25s ease; z-index: 99; font-size: 13.5px;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ============================================================
+   AGGRESSIVE OVERRIDE: FORCE ALL MAIN CONTENT TEXT TO BE DARK
+   (This defeats inline styles from JavaScript)
+   ============================================================ */
+main *,
+.panel *,
+.card *,
+.breakdown *,
+.result-box *,
+.ingredients *,
+.mix-details *,
+.summary *,
+.metric *,
+.metric-value,
+.metric-label,
+td,
+th,
+label,
+h2, h3, h4, p, span, div {
+    color: #16232e !important;  /* DARK TEXT */
+}
+
+/* EXCEPTIONS: Keep text white ONLY in dark areas */
+.topbar *,
+.topbar .chip,
+.topbar .brand-mark,
+.tabs *,
+.tab,
+.num,
+.btn.primary,
+.btn.primary * {
+    color: #ffffff !important;
+}
+
+/* Force light backgrounds so dark text is readable */
+.metric {
+    background: #ffffff !important;
+}
+.card {
+    background: #ffffff !important;
+}
+.breakdown, .result-box {
+    background: #f7fafb !important;
+}
+body, main, .panel {
+    background: var(--bg) !important;
+}
+
+/* HIDE ALL BLUE CIRCLES / SPINNERS */
+.spinner,
+.loader,
+.status-dot,
+.circle,
+.circle-indicator,
+[class*="spinner"],
+[class*="loader"],
+[class*="dot"],
+[class*="circle"] {
+    display: none !important;
+}
