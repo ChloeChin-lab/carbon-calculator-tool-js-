@@ -1,15 +1,37 @@
+/* =====================================================================
+ * app.js  —  Option C (Static Browser App)   [CORRECTED]
+ * ---------------------------------------------------------------------
+ * The user interface. It draws controls, reads what the engineer typed,
+ * hands it to ENGINE and draws what comes back. All arithmetic lives in
+ * engine.js and all saving lives in storage.js.
+ *
+ * WHAT CHANGED IN THE PROJECT BUILDER
+ * -----------------------------------
+ * The old form invented its own shape: three fixed rows per component
+ * (Concrete, Rebars, Strands), the material for two of them hard wired to
+ * "Steel", no reference volume or weight, and no per component count. The
+ * Python app builds a project from components, each holding as many
+ * material lines as the engineer needs, each line carrying its own label,
+ * material, amount, unit, reference amount and a "x Qty" flag. That is the
+ * shape rebuilt here, so the two apps produce the same numbers from the
+ * same inputs, and so "%" and "L/m3" units finally have the reference they
+ * need to mean anything.
+ * ===================================================================== */
+
 (function () {
   "use strict";
 
   var DB = RULEBOOK;          /* reference tables + materials library */
   var userMixes = [];         /* custom mixes saved in this browser   */
+  var SELECT = ENGINE.SELECT_PLACEHOLDER;
 
   var state = {
-    projectRows: null,        /* output of ENGINE.calculateProjectRows */
+    draft: { structure: "", components: [] },
+    projectRows: null,
     projectTotals: null,
     durProjectName: null,
-    durAlloc: null,           /* allocated carbon per component/material */
-    durGridRows: null,        /* the editable grid                       */
+    durAlloc: null,
+    durGridRows: null,
     durMechanism: "CHLORIDE",
     durExposure: "XS1",
     durDetail: null,
@@ -17,6 +39,9 @@
     durSummary: null,
     cmpMode: "mix"
   };
+
+  var uidSeq = 0;
+  function uid() { uidSeq += 1; return "r" + uidSeq; }
 
   /* =================================================================
    * tiny DOM helpers
@@ -28,14 +53,20 @@
     if (text !== undefined) { e.textContent = text; }
     return e;
   }
-  function clear(node) { while (node.firstChild) { node.removeChild(node.firstChild); } }
+  function clear(node) { while (node && node.firstChild) { node.removeChild(node.firstChild); } }
+
+  function labelled(text, control, cls) {
+    var l = el("label", cls, text);
+    l.appendChild(control);
+    return l;
+  }
 
   function toast(msg) {
     var t = $("toast");
     t.textContent = msg;
     t.classList.add("show");
     clearTimeout(t._timer);
-    t._timer = setTimeout(function () { t.classList.remove("show"); }, 2600);
+    t._timer = setTimeout(function () { t.classList.remove("show"); }, 2800);
   }
 
   /** Format a number for display. Mirrors _numfmt() in the Python engine. */
@@ -49,14 +80,15 @@
     return n.toLocaleString(undefined, { minimumFractionDigits: nd, maximumFractionDigits: nd });
   }
 
-  /** Build a <table> from an array of row objects. */
+  /** Build a table from an array of row objects. */
   function renderTable(tableEl, rows, opts) {
     opts = opts || {};
     clear(tableEl);
     if (!rows || !rows.length) {
-      var tr0 = el("tr");
+      var tb0 = el("tbody"), tr0 = el("tr");
       var td0 = el("td", null, opts.empty || "Nothing to show yet.");
-      td0.colSpan = 1; tr0.appendChild(td0); tableEl.appendChild(tr0);
+      td0.colSpan = 12; tr0.appendChild(td0); tb0.appendChild(tr0);
+      tableEl.appendChild(tb0);
       return;
     }
     var cols = opts.columns || Object.keys(rows[0]).filter(function (c) {
@@ -68,7 +100,7 @@
       var th = el("th", null, c);
       if (typeof rows[0][c] === "number") { th.className = "num"; }
       var help = DB.column_descriptions && DB.column_descriptions[c];
-      if (help) { th.title = help; th.textContent = c + " ⓘ"; }
+      if (help) { th.title = help; th.textContent = c + " \u24D8"; }
       htr.appendChild(th);
     });
     thead.appendChild(htr); tableEl.appendChild(thead);
@@ -118,11 +150,47 @@
 
   function allMaterialNames() {
     var names = [];
-    (DB.mixes || []).forEach(function (m) { names.push(m.Mix_Key); });
-    (DB.direct || []).forEach(function (d) { names.push(d.Material_Key); });
+    (DB.mixes || []).forEach(function (m) { if (m.Mix_Key) { names.push(String(m.Mix_Key)); } });
+    (DB.direct || []).forEach(function (d) { if (d.Material_Key) { names.push(String(d.Material_Key)); } });
     names.sort();
     userMixes.forEach(function (m) { names.push("Custom: " + m.mix_name); });
     return names;
+  }
+
+  /* ---- unit options, read from the Unit_Logic table ---- */
+  var MASTER_UNITS = DB.master_units ||
+    ["m3", "m3 / unit", "tonnes", "tonnes / unit", "kg", "L", "L/m3",
+     "% by conc. vol.", "% of wt.", "m", "m2", "units"];
+
+  function unitRowFor(baseName) {
+    var want = String(baseName || "").trim().toLowerCase();
+    var hit = null;
+    (DB.unit_logic || []).forEach(function (u) {
+      if (String(u.Component_Name || "").trim().toLowerCase() === want) { hit = u; }
+    });
+    return hit;
+  }
+
+  function unitsFor(baseName) {
+    var out = [];
+    var hit = unitRowFor(baseName);
+    if (hit && hit.Unit_Options) {
+      String(hit.Unit_Options).split(",").forEach(function (s) {
+        s = s.trim();
+        if (s && out.indexOf(s) === -1) { out.push(s); }
+      });
+    }
+    MASTER_UNITS.forEach(function (u) { if (out.indexOf(u) === -1) { out.push(u); } });
+    return out.length ? out : ["m3"];
+  }
+
+  function defaultUnitFor(baseName) {
+    var hit = unitRowFor(baseName);
+    if (hit && hit.Default_Unit) {
+      var v = String(hit.Default_Unit).trim();
+      if (v && v.toLowerCase() !== "nan") { return v; }
+    }
+    return "m3";
   }
 
   /* =================================================================
@@ -138,9 +206,9 @@
           p.classList.remove("active");
         });
         $("tab-" + b.dataset.tab).classList.add("active");
-        if (b.dataset.tab === "durability")  { refreshDurabilityProjects(); }
-        if (b.dataset.tab === "comparison")  { refreshComparisonPickers(); }
-        if (b.dataset.tab === "library")     { refreshLibrary(); }
+        if (b.dataset.tab === "durability") { refreshDurabilityProjects(); }
+        if (b.dataset.tab === "comparison") { refreshComparisonPickers(); }
+        if (b.dataset.tab === "library")    { refreshLibrary(); }
       });
     });
   }
@@ -154,11 +222,12 @@
    * ================================================================= */
   function initMaterialsTab() {
     var sel = $("matSelect");
+
     function fill() {
+      var prev = sel.value;
       clear(sel);
-      allMaterialNames().forEach(function (n) {
-        sel.appendChild(new Option(n, n));
-      });
+      allMaterialNames().forEach(function (n) { sel.appendChild(new Option(n, n)); });
+      if (prev) { sel.value = prev; }
       showBreakdown();
     }
 
@@ -172,37 +241,40 @@
       var g = ENGINE.parseGrade(name);
 
       var lines = [
-        ["Density", fmt(props["Mass (kg/m3)"], 1) + " kg/m³"],
-        ["GWP100 factor", fmt(props["Factor_GWP (kgCO2e/kg)"], 4) + " kgCO₂e per kg"],
+        ["Density", fmt(props["Mass (kg/m3)"], 1) + " kg/m\u00B3"],
+        ["GWP100 factor", fmt(props["Factor_GWP (kgCO2e/kg)"], 4) + " kgCO\u2082e per kg"],
         ["Carbon per cubic metre",
-         fmt(props["Mass (kg/m3)"] * props["Factor_GWP (kgCO2e/kg)"], 1) + " kgCO₂e/m³"]
+         fmt(props["Mass (kg/m3)"] * props["Factor_GWP (kgCO2e/kg)"], 1) + " kgCO\u2082e/m\u00B3"],
+        ["Embodied energy per cubic metre",
+         fmt(props["Mass (kg/m3)"] * props["Factor_EE (MJ/kg)"] / 1000, 3) + " GJ/m\u00B3"]
       ];
       if (g[0] !== null) {
         var s = ENGINE.getStrength(name, DB);
         lines.push(["Recognised grade", s.Grade + "  (f_ck,cyl = " + s.fck_cyl + " MPa)"]);
         var b = ENGINE.autofillBinder(name, DB, userMixes);
-        lines.push(["Binder content", fmt(b.cement + b.additive, 0) + " kg/m³ (" +
+        lines.push(["Binder content", fmt(b.cement + b.additive, 0) + " kg/m\u00B3 (" +
                     fmt(b.cement, 0) + " cement + " + fmt(b.additive, 0) + " additive)"]);
         lines.push(["k400 (carbonation)",
                     fmt(ENGINE.defaultCarbonationCoefficient(s.Grade, s.fck_cyl, s.fcm_cyl, DB), 2) +
                     " mm/year^0.5"]);
         lines.push(["Dc (chloride)",
                     fmt(ENGINE.defaultDiffusionCoefficient(s.Grade, s.fck_cyl, DB), 2) +
-                    " ×10⁻⁶ mm²/s"]);
+                    " \u00D710\u207B\u2076 mm\u00B2/s"]);
       }
       var tbl = el("table");
+      var tb = el("tbody");
       lines.forEach(function (l) {
         var tr = el("tr");
         tr.appendChild(el("td", null, l[0]));
-        var td = el("td", "num", l[1]);
-        tr.appendChild(td);
-        tbl.appendChild(tr);
+        tr.appendChild(el("td", "num", l[1]));
+        tb.appendChild(tr);
       });
+      tbl.appendChild(tb);
       box.appendChild(tbl);
 
       if (mix) {
-        box.appendChild(el("h4", null, "Ingredients (kg per m³)"));
-        var it = el("table");
+        box.appendChild(el("h4", null, "Ingredients (kg per m\u00B3)"));
+        var it = el("table"), itb = el("tbody");
         (DB.factors || []).forEach(function (f) {
           var v = mix[f.Component];
           if (v === undefined || v === null || v === "" || ENGINE.sf(v) === 0) { return; }
@@ -210,9 +282,10 @@
           tr.appendChild(el("td", null, f.Component));
           tr.appendChild(el("td", "num", fmt(ENGINE.sf(v), 1)));
           tr.appendChild(el("td", "num",
-            fmt(ENGINE.sf(v) * ENGINE.sf(f.ECFGWP100_kgCO2e_kg), 2) + " kgCO₂e"));
-          it.appendChild(tr);
+            fmt(ENGINE.sf(v) * ENGINE.sf(f.ECFGWP100_kgCO2e_kg), 2) + " kgCO\u2082e"));
+          itb.appendChild(tr);
         });
+        it.appendChild(itb);
         box.appendChild(it);
       }
     }
@@ -223,12 +296,10 @@
     var ing = $("mixIngredients");
     clear(ing);
     (DB.factors || []).forEach(function (f) {
-      var lab = el("label", null, f.Component + " (kg/m³)");
       var inp = el("input");
       inp.type = "number"; inp.step = "0.1"; inp.value = "0";
       inp.dataset.component = f.Component;
-      lab.appendChild(inp);
-      ing.appendChild(lab);
+      ing.appendChild(labelled(f.Component + " (kg/m\u00B3)", inp));
     });
 
     function readCustomMix() {
@@ -246,28 +317,32 @@
       var p = ENGINE.calcMixCarbon("Custom: __preview__", DB, tmp);
       var box = $("mixResult");
       clear(box);
+      if (ENGINE.sf(p["Mass (kg/m3)"]) <= 0) {
+        box.appendChild(el("div", null, "Type at least one ingredient quantity."));
+        return;
+      }
+      box.appendChild(el("div", null, "Density: " + fmt(p["Mass (kg/m3)"], 1) + " kg/m\u00B3"));
       box.appendChild(el("div", null,
-        "Density: " + fmt(p["Mass (kg/m3)"], 1) + " kg/m³"));
-      box.appendChild(el("div", null,
-        "GWP100: " + fmt(p["Factor_GWP (kgCO2e/kg)"], 4) + " kgCO₂e/kg  →  " +
-        fmt(p["Mass (kg/m3)"] * p["Factor_GWP (kgCO2e/kg)"], 1) + " kgCO₂e per m³"));
+        "GWP100: " + fmt(p["Factor_GWP (kgCO2e/kg)"], 4) + " kgCO\u2082e/kg  \u2192  " +
+        fmt(p["Mass (kg/m3)"] * p["Factor_GWP (kgCO2e/kg)"], 1) + " kgCO\u2082e per m\u00B3"));
       box.appendChild(el("div", null,
         "Embodied energy: " +
-        fmt(p["Mass (kg/m3)"] * p["Factor_EE (MJ/kg)"] / 1000, 3) + " GJ per m³"));
+        fmt(p["Mass (kg/m3)"] * p["Factor_EE (MJ/kg)"] / 1000, 3) + " GJ per m\u00B3"));
     });
 
     $("btnSaveMix").addEventListener("click", function () {
       var name = $("mixName").value.trim();
       if (!name) { toast("Give the mix a name first."); return; }
       var mix = { mix_name: name, components: readCustomMix(), adhoc_materials: [] };
-      STORE.saveMix(mix).then(function () {
-        return STORE.listMixes();
-      }).then(function (ms) {
-        userMixes = ms;
-        fill();
-        renderSavedMixes();
-        toast("Mix '" + name + "' saved in this browser.");
-      });
+      STORE.saveMix(mix)
+        .then(function () { return STORE.listMixes(); })
+        .then(function (ms) {
+          userMixes = ms;
+          fill();
+          renderSavedMixes();
+          renderComponents();
+          toast("Mix '" + name + "' saved in this browser.");
+        });
     });
 
     function renderSavedMixes() {
@@ -277,9 +352,11 @@
       userMixes.forEach(function (m) {
         var lab = el("label");
         lab.appendChild(el("span", null, m.mix_name));
-        var x = el("button", "btn ghost", "×");
+        var x = el("button", "btn ghost", "\u00D7");
+        x.title = "Delete this mix";
         x.addEventListener("click", function () {
-          STORE.deleteMix(m.mix_name).then(function () { return STORE.listMixes(); })
+          STORE.deleteMix(m.mix_name)
+            .then(function () { return STORE.listMixes(); })
             .then(function (ms) { userMixes = ms; fill(); renderSavedMixes(); });
         });
         lab.appendChild(x);
@@ -294,137 +371,257 @@
   /* =================================================================
    * TAB 2 — PROJECT BUILDER
    * ================================================================= */
-  var ROW_LABELS = {
-    Concrete:   "Concrete",
-    Rebars:     "Reinforcement bars",
-    Strands:    "Prestressing strands",
-    Steel:      "Structural steel",
-    Bracing:    "Bracing",
-    Bolts_Nuts: "Bolts & nuts"
-  };
+
+  function structureNames() {
+    return (DB.structures || []).map(function (s) {
+      return s.Structure_Name || s.Structure || "";
+    }).filter(function (n) { return !!n; });
+  }
+
+  function componentsOfStructure(name) {
+    var hit = null;
+    (DB.structures || []).forEach(function (s) {
+      if ((s.Structure_Name || s.Structure) === name) { hit = s; }
+    });
+    if (!hit) { return []; }
+    if (typeof hit.Components === "string") {
+      return hit.Components.split(",").map(function (c) { return c.trim(); })
+                 .filter(function (c) { return !!c; });
+    }
+    /* tolerate the older array-of-objects shape */
+    return (hit.Components || []).map(function (c) { return c.name || String(c); });
+  }
+
+  function newMaterialLine(unit) {
+    return { id: uid(), label: "", mix: SELECT, qty: 0,
+             unit: unit || "m3", ref_value: 0, ref_per_unit: false };
+  }
+
+  function newComponent(baseName) {
+    return {
+      id: uid(),
+      base_name: baseName,
+      custom_name: baseName,
+      count: 1,
+      materials: [newMaterialLine(defaultUnitFor(baseName))]
+    };
+  }
 
   function initProjectTab() {
     var sel = $("structSelect");
     clear(sel);
-    (DB.structures || []).forEach(function (s) {
-      sel.appendChild(new Option(s.Structure, s.Structure));
-    });
+    sel.appendChild(new Option("---", ""));
+    structureNames().forEach(function (n) { sel.appendChild(new Option(n, n)); });
 
-    $("btnBuildForm").addEventListener("click", buildComponentForms);
+    $("btnBuildForm").addEventListener("click", generateComponents);
+    $("btnAddExtra").addEventListener("click", function () {
+      var c = newComponent("Extra");
+      c.custom_name = "Extra component";
+      state.draft.components.push(c);
+      renderComponents();
+    });
     $("btnCalcProject").addEventListener("click", calculateProject);
     $("btnSaveProject").addEventListener("click", saveProject);
     $("btnClearProject").addEventListener("click", function () {
-      clear($("componentForms")); clear($("projectResults"));
-      $("projectActions").style.display = "none";
+      if (!window.confirm("Clear the project form and start over?")) { return; }
+      state.draft = { structure: "", components: [] };
       $("projName").value = "";
+      $("structSelect").value = "";
+      clear($("projectResults"));
+      renderComponents();
     });
+    renderComponents();
   }
 
-  function buildComponentForms(preset) {
-    var structName = $("structSelect").value;
-    var struct = null;
-    (DB.structures || []).forEach(function (s) { if (s.Structure === structName) { struct = s; } });
-    if (!struct) { return; }
+  function generateComponents() {
+    var name = $("structSelect").value;
+    if (!name) { toast("Choose a structure template first."); return; }
+    var comps = componentsOfStructure(name);
+    if (!comps.length) { toast("That template has no components listed."); return; }
+    state.draft = {
+      structure: name,
+      components: comps.map(function (c) { return newComponent(c); })
+    };
+    clear($("projectResults"));
+    renderComponents();
+    toast("Generated " + comps.length + " components. Assign a material to each line.");
+  }
 
+  /** Draw the whole component list from state.draft. */
+  function renderComponents() {
     var host = $("componentForms");
     clear(host);
+
+    var has = state.draft.components.length > 0;
+    $("projectActions").style.display = has ? "flex" : "none";
+    $("projectAddRow").style.display  = state.draft.structure ? "flex" : "none";
+
+    if (!has) {
+      if (state.draft.structure) {
+        host.appendChild(el("div", "callout",
+          "No components yet. Add an extra component, or pick a template and press Generate components."));
+      }
+      return;
+    }
+
     var mats = allMaterialNames();
 
-    struct.Components.forEach(function (comp) {
-      var card = el("div", "card");
-      card.dataset.component = comp.name;
-      card.appendChild(el("h3", null, comp.name));
+    state.draft.components.forEach(function (comp, ci) {
+      var card = el("div", "card comp-card");
 
-      if (comp.rows.indexOf("extra") !== -1) {
-        card.appendChild(el("p", "hint",
-          "One line per item:  Item name, Material key, Quantity, Unit"));
-        var ta = el("textarea");
-        ta.dataset.field = "extra_materials";
-        ta.placeholder = "Bearings, Steel, 2.5, tonnes\nSurfacing, Asphalt, 180, m3";
-        card.appendChild(ta);
-        host.appendChild(card);
-        return;
-      }
+      /* ---- head: count, name, remove ---- */
+      var head = el("div", "comp-head");
 
-      if (comp.units) {
-        var urow = el("div", "row");
-        var ulab = el("label", null, "Number of units");
-        var uinp = el("input");
-        uinp.type = "number"; uinp.min = "1"; uinp.value = "1";
-        uinp.dataset.field = "number_of_units";
-        ulab.appendChild(uinp); urow.appendChild(ulab);
-        card.appendChild(urow);
-      }
-
-      comp.rows.forEach(function (key) {
-        var row = el("div", "row");
-
-        var lab1 = el("label", "grow", ROW_LABELS[key] || key);
-        if (key === "Concrete") {
-          var msel = el("select");
-          msel.dataset.field = "Concrete_mat";
-          msel.appendChild(new Option("--- Select ---", ""));
-          mats.forEach(function (m) { msel.appendChild(new Option(m, m)); });
-          lab1.appendChild(msel);
-        } else {
-          var fixed = el("input");
-          fixed.type = "text"; fixed.value = "Steel"; fixed.readOnly = true;
-          lab1.appendChild(fixed);
-        }
-        row.appendChild(lab1);
-
-        var lab2 = el("label", null, "Quantity");
-        var qin = el("input");
-        qin.type = "number"; qin.step = "0.001"; qin.value = "0";
-        qin.dataset.field = key + "_vol";
-        lab2.appendChild(qin); row.appendChild(lab2);
-
-        var lab3 = el("label", null, "Unit");
-        var usel = el("select");
-        usel.dataset.field = key + "_unit";
-        (DB.unit_options || []).forEach(function (u) { usel.appendChild(new Option(u, u)); });
-        usel.value = (key === "Concrete") ? "m3 / unit"
-                   : (key === "Steel")    ? "tonnes / unit" : "% of vol.";
-        lab3.appendChild(usel); row.appendChild(lab3);
-
-        card.appendChild(row);
+      var cIn = el("input");
+      cIn.type = "number"; cIn.min = "1"; cIn.step = "1"; cIn.value = String(comp.count);
+      cIn.addEventListener("input", function () {
+        comp.count = parseInt(ENGINE.sf(cIn.value, 1), 10) || 1;
       });
+      head.appendChild(labelled("Quantity (Nos.)", cIn));
+
+      var nIn = el("input");
+      nIn.type = "text"; nIn.value = comp.custom_name;
+      nIn.addEventListener("input", function () { comp.custom_name = nIn.value; });
+      head.appendChild(labelled("Component name", nIn, "grow"));
+
+      var rm = el("button", "btn ghost danger", "Remove component");
+      rm.addEventListener("click", function () {
+        state.draft.components.splice(ci, 1);
+        renderComponents();
+      });
+      head.appendChild(rm);
+      card.appendChild(head);
+
+      card.appendChild(el("p", "hint",
+        "Base component: " + comp.base_name +
+        ". Units offered come from the Unit_Logic table for that name."));
+
+      /* ---- material lines ---- */
+      var units = unitsFor(comp.base_name);
+      var list = el("div", "mat-list");
+
+      comp.materials.forEach(function (mat, mi) {
+        var needsRef = ENGINE.needsReference(mat.unit);
+        var row = el("div", "mat-row" + (needsRef ? " needs-ref" : ""));
+
+        var lIn = el("input");
+        lIn.type = "text"; lIn.value = mat.label; lIn.placeholder = "e.g. Strands";
+        lIn.addEventListener("input", function () { mat.label = lIn.value; });
+        row.appendChild(labelled("Label (optional)", lIn));
+
+        var mSel = el("select");
+        mSel.appendChild(new Option(SELECT, SELECT));
+        mats.forEach(function (m) { mSel.appendChild(new Option(m, m)); });
+        if (mats.indexOf(mat.mix) === -1 && mat.mix !== SELECT) {
+          mSel.appendChild(new Option(mat.mix + " (not in database)", mat.mix));
+        }
+        mSel.value = mat.mix;
+        mSel.addEventListener("change", function () { mat.mix = mSel.value; });
+        row.appendChild(labelled("Material", mSel));
+
+        var qIn = el("input");
+        qIn.type = "number"; qIn.step = "0.001"; qIn.min = "0"; qIn.value = String(mat.qty);
+        qIn.addEventListener("input", function () { mat.qty = ENGINE.sf(qIn.value, 0); });
+        row.appendChild(labelled("Amount", qIn));
+
+        var uSel = el("select");
+        var uList = units.slice();
+        if (uList.indexOf(mat.unit) === -1) { uList.unshift(mat.unit); }
+        uList.forEach(function (u) { uSel.appendChild(new Option(u, u)); });
+        uSel.value = mat.unit;
+        uSel.addEventListener("change", function () {
+          mat.unit = uSel.value;
+          if (!ENGINE.needsReference(mat.unit)) {
+            mat.ref_value = 0; mat.ref_per_unit = false;
+          }
+          renderComponents();          /* the reference boxes appear or vanish */
+        });
+        row.appendChild(labelled("Unit", uSel));
+
+        if (needsRef) {
+          var rIn = el("input");
+          rIn.type = "number"; rIn.step = "0.001"; rIn.min = "0";
+          rIn.value = String(mat.ref_value);
+          rIn.addEventListener("input", function () { mat.ref_value = ENGINE.sf(rIn.value, 0); });
+          row.appendChild(labelled(ENGINE.referenceLabel(mat.unit), rIn));
+
+          var cb = el("input");
+          cb.type = "checkbox"; cb.checked = !!mat.ref_per_unit;
+          cb.addEventListener("change", function () { mat.ref_per_unit = cb.checked; });
+          var cbLab = el("label", "check ref-check");
+          cbLab.title = "Tick when the reference above is for ONE unit, so it is multiplied by the component quantity.";
+          cbLab.appendChild(cb);
+          cbLab.appendChild(el("span", null, "\u00D7 Qty"));
+          row.appendChild(cbLab);
+        }
+
+        var del = el("button", "btn ghost danger", "Delete");
+        del.disabled = comp.materials.length <= 1;
+        del.addEventListener("click", function () {
+          comp.materials.splice(mi, 1);
+          renderComponents();
+        });
+        row.appendChild(del);
+
+        list.appendChild(row);
+      });
+
+      card.appendChild(list);
+
+      var add = el("button", "btn", "+ Add material");
+      add.addEventListener("click", function () {
+        comp.materials.push(newMaterialLine(defaultUnitFor(comp.base_name)));
+        renderComponents();
+      });
+      var arow = el("div", "row"); arow.appendChild(add);
+      card.appendChild(arow);
 
       host.appendChild(card);
     });
-
-    $("projectActions").style.display = "flex";
-    if (preset) { applyPreset(preset); }
   }
 
-  /** Read every component card back into the ui_data shape the engine expects. */
-  function collectProjectData() {
-    var components = {};
-    Array.prototype.forEach.call($("componentForms").children, function (card) {
-      var name = card.dataset.component;
-      if (!name) { return; }
-      var data = {};
-      Array.prototype.forEach.call(card.querySelectorAll("[data-field]"), function (f) {
-        data[f.dataset.field] = f.value;
-      });
-      components[name] = data;
-    });
-    return { structure: $("structSelect").value, components: components };
+  /** Strip the transient ids before the draft is stored or calculated. */
+  function draftForEngine() {
+    return {
+      structure: state.draft.structure,
+      components: state.draft.components.map(function (c) {
+        return {
+          base_name: c.base_name,
+          custom_name: c.custom_name,
+          count: c.count,
+          materials: c.materials.map(function (m) {
+            return { label: m.label, mix: m.mix, qty: m.qty, unit: m.unit,
+                     ref_value: m.ref_value, ref_per_unit: m.ref_per_unit };
+          })
+        };
+      })
+    };
   }
 
-  function applyPreset(uiData) {
-    if (uiData.structure) { $("structSelect").value = uiData.structure; }
-    Array.prototype.forEach.call($("componentForms").children, function (card) {
-      var cd = (uiData.components || {})[card.dataset.component];
-      if (!cd) { return; }
-      Array.prototype.forEach.call(card.querySelectorAll("[data-field]"), function (f) {
-        if (cd[f.dataset.field] !== undefined) { f.value = cd[f.dataset.field]; }
-      });
-    });
+  /** Put a saved project back into the form. */
+  function loadDraft(uiData) {
+    var comps = ENGINE.normaliseComponents(uiData);
+    state.draft = {
+      structure: (uiData && uiData.structure) || "",
+      components: comps.map(function (c) {
+        return {
+          id: uid(), base_name: c.base_name, custom_name: c.custom_name,
+          count: c.count,
+          materials: (c.materials.length ? c.materials : [{}]).map(function (m) {
+            return { id: uid(), label: m.label || "", mix: m.mix || SELECT,
+                     qty: ENGINE.sf(m.qty, 0), unit: m.unit || "m3",
+                     ref_value: ENGINE.sf(m.ref_value, 0),
+                     ref_per_unit: !!m.ref_per_unit };
+          })
+        };
+      })
+    };
+    $("structSelect").value = state.draft.structure;
+    renderComponents();
   }
 
   function calculateProject() {
-    var uiData = collectProjectData();
+    var uiData = draftForEngine();
     var res = ENGINE.calculateProjectRows(DB, userMixes, uiData);
     state.projectRows = res.rows;
     state.projectTotals = res.totals;
@@ -434,13 +631,13 @@
 
     if (res.errors.length) {
       var warn = el("div", "callout err");
-      warn.appendChild(el("strong", null, "Warnings"));
-      res.errors.forEach(function (e) { warn.appendChild(el("div", null, "• " + e)); });
+      warn.appendChild(el("strong", null, "Check these lines"));
+      res.errors.forEach(function (e) { warn.appendChild(el("div", null, "\u2022 " + e)); });
       host.appendChild(warn);
     }
     if (!res.rows.length) {
       host.appendChild(el("div", "callout",
-        "No quantities were entered, so there is nothing to total."));
+        "Nothing to total yet. Assign a material and an amount above zero to at least one line."));
       return;
     }
 
@@ -449,9 +646,10 @@
 
     var sum = el("div", "summary");
     [["Total mass", fmt(res.totals.Total_Mass_kg / 1000, 2) + " t"],
+     ["Total volume", fmt(res.totals.Total_Volume_m3, 2) + " m\u00B3"],
      ["Embodied energy", fmt(res.totals.Total_EE_GJ, 1) + " GJ"],
-     ["Embodied carbon (EC)", fmt(res.totals.Total_EC_kgCO2 / 1000, 2) + " tCO₂"],
-     ["Global warming potential (GWP100)", fmt(res.totals.Total_GWP100_kgCO2e / 1000, 3) + " tCO₂e"]
+     ["Embodied carbon (EC)", fmt(res.totals.Total_EC_kgCO2 / 1000, 2) + " tCO\u2082"],
+     ["Global warming potential (GWP100)", fmt(res.totals.Total_GWP100_kgCO2e / 1000, 3) + " tCO\u2082e"]
     ].forEach(function (m) {
       var d = el("div", "metric");
       d.appendChild(el("div", "metric-label", m[0]));
@@ -462,8 +660,11 @@
 
     var rows = res.rows.map(function (r) {
       return {
-        "Item": r.item_name, "Material": r.material,
-        "Quantity": r.volume_input, "Unit": r.unit,
+        "Item": r.item_name,
+        "Material": r.material,
+        "Amount": r.display_qty,
+        "Unit": r.unit,
+        "Total Volume (m3)": r.volume_m3,
         "Total Mass (kg)": r.mass_kg,
         "Total EE (GJ)": r.ee_gj,
         "Total EC (kgCO2)": r.ec_kgco2,
@@ -490,8 +691,8 @@
   function saveProject() {
     var name = $("projName").value.trim();
     if (!name) { toast("Give the project a name first."); return; }
-    var uiData = collectProjectData();
-    STORE.saveProject(name, uiData).then(function () {
+    if (!state.draft.components.length) { toast("Generate the components first."); return; }
+    STORE.saveProject(name, draftForEngine()).then(function () {
       toast("Project '" + name + "' saved in this browser.");
       refreshDurabilityProjects();
     });
@@ -559,9 +760,9 @@
     var cs = ENGINE.surfaceChlorideFromDistance(d, c1);
     $("durSurface").value = cs.toFixed(3);
     $("chlHint").textContent =
-      "Airborne salt = c₁ × d^(−0.6); surface = 1.5 × (airborne)^0.4. Collapsed, that is " +
-      ENGINE.collapsedConstant(c1).toFixed(5) + " × d^(−0.24), giving 6.417 kg/m³ at one metre " +
-      "and 0.704 kg/m³ at ten kilometres.";
+      "Airborne salt = c\u2081 \u00D7 d^(\u22120.6); surface = 1.5 \u00D7 (airborne)^0.4. Collapsed, that is " +
+      ENGINE.collapsedConstant(c1).toFixed(5) + " \u00D7 d^(\u22120.24), giving 6.417 kg/m\u00B3 at one metre " +
+      "and 0.704 kg/m\u00B3 at ten kilometres.";
   }
 
   function refreshDurabilityProjects() {
@@ -578,7 +779,7 @@
   function loadProjectMaterials() {
     var name = $("durProject").value;
     if (!name) { toast("Save a project first, in the Project Builder tab."); return; }
-    STORE.loadProject(name).then(function (uiData) {
+    return STORE.loadProject(name).then(function (uiData) {
       if (!uiData) { toast("Could not load that project."); return; }
       var res = ENGINE.calculateProjectRows(DB, userMixes, uiData);
       state.durProjectName = name;
@@ -589,6 +790,13 @@
 
       var host = $("durMaterials");
       clear(host);
+      if (!cm.length) {
+        host.appendChild(el("div", "callout err",
+          "That project has no priced line items. Open it in the Project Builder, " +
+          "assign materials and amounts, then save it again."));
+        clear($("durConcretePick"));
+        return;
+      }
       var scroll = el("div", "table-scroll");
       var tbl = el("table");
       renderTable(tbl, cm.map(function (r) {
@@ -621,7 +829,7 @@
       });
       pick.appendChild(list);
 
-      toast("Loaded " + cm.length + " component/material lines from '" + name + "'.");
+      toast("Loaded " + cm.length + " component and material lines from '" + name + "'.");
       refreshRunList();
     });
   }
@@ -668,7 +876,7 @@
     cols.forEach(function (c) {
       var th = el("th");
       var help = DB.column_descriptions && DB.column_descriptions[c];
-      th.textContent = help ? c + " ⓘ" : c;
+      th.textContent = help ? c + " \u24D8" : c;
       if (help) { th.title = help; }
       htr.appendChild(th);
     });
@@ -683,7 +891,8 @@
                         ENGINE.CALCULATED_COLUMNS.indexOf(c) !== -1);
         if (readOnly) {
           td.className = (c === C.COMPONENT || c === C.MATERIAL) ? "" : "calc";
-          td.textContent = (typeof r[c] === "number") ? fmt(r[c], 1) : String(r[c] === null ? "" : r[c]);
+          td.textContent = (typeof r[c] === "number")
+            ? fmt(r[c], 1) : String(r[c] === null || r[c] === undefined ? "" : r[c]);
         } else if (c === C.ELEMENT || c === C.CLASS) {
           var sel = el("select");
           var opts = (c === C.ELEMENT)
@@ -718,15 +927,19 @@
     if (!state.durGridRows || !state.durGridRows.length) {
       toast("Build the input grid first."); return;
     }
+    if (state.durMechanism === "NONE") {
+      toast("That exposure class has no deterioration model. Pick an XC, XD or XS class.");
+      return;
+    }
     ENGINE.refreshDerived(state.durGridRows, state.durExposure,
       ENGINE.sf($("durAllowance").value, 10), $("durQC").checked, DB);
 
     var detail;
     if (state.durMechanism === "CARBONATION") {
-      detail = ENGINE.runCarbonation(state.durGridRows, state.durAlloc,
+      detail = ENGINE.runCarbonation(state.durGridRows, state.durAlloc || [],
         ENGINE.sf($("durK1").value, 1.0), ENGINE.sf($("durK2").value, 1.4));
     } else {
-      detail = ENGINE.runChloride(state.durGridRows, state.durAlloc,
+      detail = ENGINE.runChloride(state.durGridRows, state.durAlloc || [],
         ENGINE.sf($("durSurface").value, 0));
     }
     var mat = ENGINE.materialSummary(detail);
@@ -741,7 +954,7 @@
     [
       ["Materials checked", sum.n_materials + " (" + sum.n_pass + " pass)", sum.all_pass ? "good" : "bad"],
       ["Governing design life", fmt(sum.governing_life, 0) + " years", ""],
-      ["Total embodied carbon", fmt(sum.total_carbon, 2) + " tCO₂e", ""],
+      ["Total embodied carbon", fmt(sum.total_carbon, 2) + " tCO\u2082e", ""],
       ["Volume-weighted f_ck", fmt(sum.weighted_fck, 1) + " MPa", ""],
       ["Whole-structure efficiency index", fmt(sum.structure_index, 3), ""],
       ["Sum of material indices", fmt(sum.sum_index, 3), ""]
@@ -757,12 +970,12 @@
     var precise = ["Site carbonation coefficient", "Reference carbonation coefficient",
                    "Error function value", "Inverse error function value",
                    "Threshold concentration (kg per m3)", "Surface concentration (kg per m3)",
-                   "Chloride diffusion coefficient", "Carbon efficiency index",
+                   "Chloride diffusion coefficient", ENGINE.INDEX_COLUMN,
                    "Concrete carbon (tonne CO2e)", "Supporting carbon (tonne CO2e)",
                    "Total embodied carbon (tonne CO2e)"];
     renderTable($("durDetail"), detail, { precise: precise });
     renderTable($("durMaterialTable"), mat, { precise: precise });
-    toast(sum.all_pass ? "All materials PASS." : "Some materials FAIL — see the table.");
+    toast(sum.all_pass ? "All materials PASS." : "Some materials FAIL. See the table.");
   }
 
   function saveRun() {
@@ -802,7 +1015,7 @@
       var scroll = el("div", "table-scroll");
       var tbl = el("table");
       var thead = el("thead"), htr = el("tr");
-      ["Version", "Mechanism", "Exposure", "Saved", ""].forEach(function (h) {
+      ["Version", "Mechanism", "Exposure", "Saved", "Actions"].forEach(function (h) {
         htr.appendChild(el("th", null, h));
       });
       thead.appendChild(htr); tbl.appendChild(thead);
@@ -829,7 +1042,7 @@
   }
 
   function loadRun(runId) {
-    STORE.getRun(runId).then(function (run) {
+    return STORE.getRun(runId).then(function (run) {
       if (!run) { return; }
       var s = run.run_data.settings || {};
       $("durExposure").value = run.exposure_class;
@@ -901,11 +1114,9 @@
     return out;
   }
 
-  function drawBars(host, rows, labelKey, valueKey, unit, altKey) {
+  function drawBars(host, rows, labelKey, valueKey, unit) {
     var max = 0;
-    rows.forEach(function (r) {
-      max = Math.max(max, ENGINE.sf(r[valueKey]), altKey ? ENGINE.sf(r[altKey]) : 0);
-    });
+    rows.forEach(function (r) { max = Math.max(max, ENGINE.sf(r[valueKey])); });
     if (max <= 0) { return; }
     rows.forEach(function (r) {
       var row = el("div", "bar-row");
@@ -933,6 +1144,7 @@
       var out = {
         "Material": n,
         "Density (kg/m3)": p["Mass (kg/m3)"],
+        "GWP100 factor (kgCO2e/kg)": p["Factor_GWP (kgCO2e/kg)"],
         "GWP100 (kgCO2e/m3)": carbonPerM3,
         "Embodied energy (GJ/m3)": p["Mass (kg/m3)"] * p["Factor_EE (MJ/kg)"] / 1000,
         "f_ck (MPa)": s.fck_cyl
@@ -952,18 +1164,20 @@
     call.appendChild(el("strong", null, "Executive summary"));
     call.appendChild(el("div", null,
       "Lowest carbon per cubic metre: " + best.Material + " at " +
-      fmt(best["GWP100 (kgCO2e/m3)"], 1) + " kgCO₂e/m³."));
+      fmt(best["GWP100 (kgCO2e/m3)"], 2) + " kgCO\u2082e/m\u00B3, at a density of " +
+      fmt(best["Density (kg/m3)"], 2) + " kg/m\u00B3."));
     call.appendChild(el("div", null,
-      "Highest: " + worst.Material + " at " + fmt(worst["GWP100 (kgCO2e/m3)"], 1) +
-      " kgCO₂e/m³ — a difference of " + fmt(saving, 1) + " kgCO₂e/m³ (" + fmt(pct, 1) + "%)."));
+      "Highest: " + worst.Material + " at " + fmt(worst["GWP100 (kgCO2e/m3)"], 2) +
+      " kgCO\u2082e/m\u00B3, a difference of " + fmt(saving, 2) + " kgCO\u2082e/m\u00B3 (" +
+      fmt(pct, 1) + "%)."));
     call.appendChild(el("div", null,
-      "Note that carbon per cubic metre alone does not decide the better mix. " +
-      "A denser mix may carry more load and last longer, which is what the " +
-      "carbon efficiency index in the Durability tab is for."));
+      "Carbon per cubic metre alone does not decide the better mix. A denser mix may " +
+      "carry more load and last longer, which is what the carbon efficiency index in " +
+      "the Durability tab is for."));
     host.appendChild(call);
 
     host.appendChild(el("h4", null, "Embodied carbon per cubic metre"));
-    drawBars(host, rows, "Material", "GWP100 (kgCO2e/m3)", "kgCO₂e/m³");
+    drawBars(host, rows, "Material", "GWP100 (kgCO2e/m3)", "kgCO\u2082e/m\u00B3");
 
     var scroll = el("div", "table-scroll");
     var tbl = el("table"); renderTable(tbl, rows);
@@ -989,6 +1203,7 @@
           "Project": n,
           "Structure": (d && d.structure) || "",
           "Total mass (t)": res.totals.Total_Mass_kg / 1000,
+          "Total volume (m3)": res.totals.Total_Volume_m3,
           "Embodied energy (GJ)": res.totals.Total_EE_GJ,
           "Embodied carbon (tCO2)": res.totals.Total_EC_kgCO2 / 1000,
           "GWP100 (tCO2e)": res.totals.Total_GWP100_kgCO2e / 1000
@@ -1003,15 +1218,15 @@
       var call = el("div", "callout");
       call.appendChild(el("strong", null, "Executive summary"));
       call.appendChild(el("div", null,
-        "Lowest total GWP100: " + best.Project + " at " + fmt(best["GWP100 (tCO2e)"], 3) + " tCO₂e."));
+        "Lowest total GWP100: " + best.Project + " at " + fmt(best["GWP100 (tCO2e)"], 3) + " tCO\u2082e."));
       call.appendChild(el("div", null,
         "Highest: " + worst.Project + " at " + fmt(worst["GWP100 (tCO2e)"], 3) +
-        " tCO₂e. Choosing the better design avoids " + fmt(saving, 3) +
-        " tCO₂e, or " + fmt(pct, 1) + "%."));
+        " tCO\u2082e. Choosing the better design avoids " + fmt(saving, 3) +
+        " tCO\u2082e, or " + fmt(pct, 1) + "%."));
       host.appendChild(call);
 
       host.appendChild(el("h4", null, "Total embodied carbon (GWP100)"));
-      drawBars(host, rows, "Project", "GWP100 (tCO2e)", "tCO₂e");
+      drawBars(host, rows, "Project", "GWP100 (tCO2e)", "tCO\u2082e");
 
       var scroll = el("div", "table-scroll");
       var tbl = el("table"); renderTable(tbl, rows);
@@ -1046,6 +1261,10 @@
         try {
           var payload = JSON.parse(reader.result);
           STORE.importAll(payload, false).then(function () {
+            return STORE.listMixes();
+          }).then(function (ms) {
+            userMixes = ms || [];
+            if (initMaterialsTab.refresh) { initMaterialsTab.refresh(); }
             toast("Backup restored."); refreshLibrary(); refreshDurabilityProjects();
           }).catch(function (e) { toast(e.message); });
         } catch (e) { toast("That file is not valid JSON."); }
@@ -1100,8 +1319,7 @@
           open.addEventListener("click", function () {
             goToTab("project");
             $("projName").value = p.project_name;
-            $("structSelect").value = (p.project_data && p.project_data.structure) || "";
-            buildComponentForms(p.project_data);
+            loadDraft(p.project_data || {});
           });
           var assess = el("button", "btn", "Assess");
           assess.title = "Open in Durability & Service Life";
@@ -1193,53 +1411,3 @@
     document.addEventListener("DOMContentLoaded", boot);
   } else { boot(); }
 })();
-
-// ============================================================
-// ULTIMATE FIX: Watchdog that kills ANY white text FOREVER
-// ============================================================
-
-// This function fixes white text on a specific element
-function killWhiteText(element) {
-    // Check if the element itself has white text
-    if (element.style && element.style.color) {
-        var color = element.style.color.toLowerCase();
-        if (color === 'white' || color === '#fff' || color === '#ffffff' || color === 'rgb(255, 255, 255)') {
-            element.style.color = '#16232e'; // Force dark
-        }
-    }
-    
-    // Check ALL children inside this element
-    var children = element.querySelectorAll('*');
-    for (var i = 0; i < children.length; i++) {
-        var child = children[i];
-        if (child.style && child.style.color) {
-            var childColor = child.style.color.toLowerCase();
-            if (childColor === 'white' || childColor === '#fff' || childColor === '#ffffff' || childColor === 'rgb(255, 255, 255)') {
-                child.style.color = '#16232e'; // Force dark
-            }
-        }
-    }
-}
-
-// Run it immediately on the whole page
-killWhiteText(document.body);
-
-// ---- THE WATCHDOG ----
-// This watches for NEW elements added to the page and fixes them instantly
-var observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(mutation) {
-        mutation.addedNodes.forEach(function(node) {
-            if (node.nodeType === 1) { // If it's an HTML element
-                killWhiteText(node);    // Kill white text inside it
-            }
-        });
-    });
-});
-
-// Start watching the entire page for changes
-observer.observe(document.body, { 
-    childList: true,   // Watch for new elements being added
-    subtree: true      // Watch everywhere inside the page
-});
-
-console.log("✅ Watchdog activated: White text will be killed automatically.");
