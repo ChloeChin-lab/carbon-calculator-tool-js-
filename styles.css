@@ -127,7 +127,7 @@ main { max-width: 1500px; margin: 0 auto; padding: 1.25rem; }
 
 .step { position: relative; padding-left: 1.1rem; border-left: 4px solid var(--brand); }
 .step h3 { display: flex; align-items: center; gap: .5rem; }
-.num {
+.step h3 .num {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; flex: 0 0 24px;
   background: var(--brand); color: #ffffff;
