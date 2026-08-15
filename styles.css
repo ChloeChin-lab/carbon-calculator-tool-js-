@@ -9,6 +9,7 @@
  * ===================================================================== */
 
 :root {
+  color-scheme: light;     /* stop browsers/OS "auto dark" from inverting our explicit colours */
   --ink:        #16212b;   /* body text                      */
   --ink-soft:   #4a5b6a;   /* secondary text                 */
   --ink-faint:  #71828f;   /* hints, captions                */
