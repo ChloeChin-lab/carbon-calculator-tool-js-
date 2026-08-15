@@ -1193,20 +1193,53 @@
     document.addEventListener("DOMContentLoaded", boot);
   } else { boot(); }
 })();
+
 // ============================================================
-// FORCE FIX: Override all white text set by JavaScript
+// ULTIMATE FIX: Watchdog that kills ANY white text FOREVER
 // ============================================================
-(function fixWhiteText() {
-    // Find every element on the page
-    var allElements = document.querySelectorAll('*');
-    for (var i = 0; i < allElements.length; i++) {
-        var el = allElements[i];
-        // If the element has an inline style that sets color to white, change it to dark
-        if (el.style && el.style.color) {
-            var color = el.style.color.toLowerCase();
-            if (color === 'white' || color === '#fff' || color === '#ffffff' || color === 'rgb(255, 255, 255)') {
-                el.style.color = '#16232e'; // Change to dark
+
+// This function fixes white text on a specific element
+function killWhiteText(element) {
+    // Check if the element itself has white text
+    if (element.style && element.style.color) {
+        var color = element.style.color.toLowerCase();
+        if (color === 'white' || color === '#fff' || color === '#ffffff' || color === 'rgb(255, 255, 255)') {
+            element.style.color = '#16232e'; // Force dark
+        }
+    }
+    
+    // Check ALL children inside this element
+    var children = element.querySelectorAll('*');
+    for (var i = 0; i < children.length; i++) {
+        var child = children[i];
+        if (child.style && child.style.color) {
+            var childColor = child.style.color.toLowerCase();
+            if (childColor === 'white' || childColor === '#fff' || childColor === '#ffffff' || childColor === 'rgb(255, 255, 255)') {
+                child.style.color = '#16232e'; // Force dark
             }
         }
     }
-})();
+}
+
+// Run it immediately on the whole page
+killWhiteText(document.body);
+
+// ---- THE WATCHDOG ----
+// This watches for NEW elements added to the page and fixes them instantly
+var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+            if (node.nodeType === 1) { // If it's an HTML element
+                killWhiteText(node);    // Kill white text inside it
+            }
+        });
+    });
+});
+
+// Start watching the entire page for changes
+observer.observe(document.body, { 
+    childList: true,   // Watch for new elements being added
+    subtree: true      // Watch everywhere inside the page
+});
+
+console.log("✅ Watchdog activated: White text will be killed automatically.");
