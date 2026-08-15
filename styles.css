@@ -1,9 +1,3 @@
-/* =====================================================================
- * styles.css — Option C
- * Deliberately plain and dense: this is an engineering tool, not a
- * marketing site. No web fonts, no CDN, so it works with no internet.
- * ===================================================================== */
-
 :root {
   --ink:      #16232e;
   --ink-soft: #5a6b7b;
@@ -148,16 +142,49 @@ tfoot td { font-weight: 700; background: #eef3f6; }
   background: #fff; cursor: pointer; color: var(--ink); font-size: 13px;
 }
 
+/* ---------------- SUMMARY / METRIC CARDS (FIXED) ---------------- */
 .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+
 .metric {
-  background: #f7fafb; border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 10px 16px; min-width: 150px;
+  background: #ffffff; 
+  border: 1px solid var(--line);
+  border-radius: var(--radius); 
+  padding: 10px 16px; 
+  min-width: 150px;
+  /* Ensure light background so dark text is readable */
 }
-.metric-label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; }
-.metric-value { font-size: 21px; font-weight: 700; margin-top: 3px; }
+
+.metric-label { 
+  font-size: 11.5px; 
+  color: var(--ink-soft); /* This is dark gray, not white */
+  text-transform: uppercase; 
+  letter-spacing: 0.4px; 
+}
+
+.metric-value { 
+  font-size: 21px; 
+  font-weight: 700; 
+  margin-top: 3px;
+  color: var(--ink); /* <<--- FORCES TEXT TO BE DARK (BLACK) */
+}
+
 .metric.good .metric-value { color: var(--pass); }
 .metric.bad  .metric-value { color: var(--fail); }
 
+/* ---------------- HIDE ALL BLUE CIRCLES / SPINNERS ---------------- */
+.spinner,
+.loader,
+.status-dot,
+.circle,
+.circle-indicator,
+[class*="spinner"],
+[class*="loader"],
+[class*="dot"],
+[class*="circle"] {
+    display: none !important;
+}
+
+/* ---------------- charts & bars ---------------- */
 .bar-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 13px; }
 .bar-label { width: 190px; flex: 0 0 auto; }
 .bar-track { flex: 1; height: 18px; background: #e8eef2; border-radius: 3px; overflow: hidden; }
