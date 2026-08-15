@@ -1,17 +1,3 @@
-/* =====================================================================
- * app.js  —  Option C (Static Browser App)
- * ---------------------------------------------------------------------
- * The user interface. This file does three things only:
- *     1. draw controls,
- *     2. read what the engineer typed,
- *     3. hand it to ENGINE and draw what comes back.
- *
- * All arithmetic lives in engine.js and all saving lives in storage.js,
- * which is the same separation Option B uses (durability_tab.py talks to
- * service_life_engine.py) and the same one Option A uses (app.py talks to
- * service_life.py). That is what makes the three options interchangeable.
- * ===================================================================== */
-
 (function () {
   "use strict";
 
@@ -1206,4 +1192,21 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);
   } else { boot(); }
+})();
+// ============================================================
+// FORCE FIX: Override all white text set by JavaScript
+// ============================================================
+(function fixWhiteText() {
+    // Find every element on the page
+    var allElements = document.querySelectorAll('*');
+    for (var i = 0; i < allElements.length; i++) {
+        var el = allElements[i];
+        // If the element has an inline style that sets color to white, change it to dark
+        if (el.style && el.style.color) {
+            var color = el.style.color.toLowerCase();
+            if (color === 'white' || color === '#fff' || color === '#ffffff' || color === 'rgb(255, 255, 255)') {
+                el.style.color = '#16232e'; // Change to dark
+            }
+        }
+    }
 })();
