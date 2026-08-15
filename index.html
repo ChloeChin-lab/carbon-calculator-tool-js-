@@ -16,9 +16,9 @@
       <div class="brand-sub">Option C &middot; runs entirely in this browser &middot; no server, no login</div>
     </div>
   </div>
-  <div class="status" id="statusBar" style="display: none;">
-    <span class="chip" id="chipStorage">storage: checking…</span>
-    <span class="chip" id="chipRulebook">rulebook: checking…</span>
+  <div class="status" id="statusBar">
+    <span class="chip" id="chipStorage">storage: checking&hellip;</span>
+    <span class="chip" id="chipRulebook">rulebook: checking&hellip;</span>
   </div>
 </header>
 
@@ -39,7 +39,7 @@
   <h2>Materials &amp; Mixes</h2>
   <p class="lede">The master library. Every mix is a recipe in kilogrammes per cubic metre.
      The app multiplies each ingredient by its carbon factor and adds them up, which is
-     exactly what a spreadsheet would do — only it cannot be typed over by accident.</p>
+     exactly what the spreadsheet does, only it cannot be typed over by accident.</p>
 
   <div class="grid-2">
     <div class="card">
@@ -72,8 +72,10 @@
 <!-- ================================================================ -->
 <section class="panel" id="tab-project">
   <h2>Project Builder</h2>
-  <p class="lede">Pick a structure template, type the quantity of each material in each
-     component, and the app converts every quantity to a mass and then to embodied carbon.</p>
+  <p class="lede">Pick a structure template, then give each component as many material
+     lines as it needs. Every line carries its own material, amount and unit. Units
+     written as a percentage, or as litres per cubic metre, also ask for the reference
+     amount they are a percentage of, which is what makes them mean anything.</p>
 
   <div class="card">
     <div class="row">
@@ -83,16 +85,21 @@
       <label class="grow">Structure template
         <select id="structSelect"></select>
       </label>
-      <button class="btn" id="btnBuildForm">Build form</button>
+      <button class="btn primary" id="btnBuildForm">Generate components</button>
     </div>
+    <p class="hint">Generating components replaces anything currently on the form.</p>
   </div>
 
   <div id="componentForms"></div>
 
+  <div class="row" id="projectAddRow" style="display:none">
+    <button class="btn" id="btnAddExtra">+ Add an extra component</button>
+  </div>
+
   <div class="row sticky-actions" id="projectActions" style="display:none">
     <button class="btn primary" id="btnCalcProject">Calculate project totals</button>
     <button class="btn" id="btnSaveProject">Save project</button>
-    <button class="btn ghost" id="btnClearProject">Clear</button>
+    <button class="btn ghost danger" id="btnClearProject">Clear all and start over</button>
   </div>
 
   <div id="projectResults"></div>
@@ -104,7 +111,7 @@
 <section class="panel" id="tab-durability">
   <h2>Durability &amp; Service Life</h2>
   <p class="lede">Six numbered steps, the same six as the desktop app and the same seven
-     sections as the cloud app. Nothing recalculates while you type — you press the button.</p>
+     sections as the cloud app. Nothing recalculates while you type. You press the button.</p>
 
   <div class="step card">
     <h3><span class="num">1</span> Select the assessed project</h3>
@@ -126,7 +133,7 @@
       </label>
       <div class="metric">
         <div class="metric-label">Deterioration model</div>
-        <div class="metric-value" id="durMechanism">—</div>
+        <div class="metric-value" id="durMechanism">&mdash;</div>
       </div>
     </div>
     <div class="row">
@@ -162,7 +169,7 @@
   <div class="step card">
     <h3><span class="num">3</span> Confirm the properties of each component and material</h3>
     <div class="row">
-      <button class="btn" id="btnBuildGrid">Build / refresh input grid</button>
+      <button class="btn" id="btnBuildGrid">Build or refresh the input grid</button>
       <span class="hint">Grey columns are calculated. Everything else can be overwritten.</span>
     </div>
     <div class="table-scroll"><table id="durGrid"></table></div>
@@ -229,7 +236,7 @@
 <section class="panel" id="tab-library">
   <h2>My Library</h2>
   <p class="lede">Everything saved on this machine. Because there is no server, the backup
-     file below <em>is</em> your database — send it to a colleague and they see exactly
+     file below <em>is</em> your database. Send it to a colleague and they see exactly
      what you see.</p>
 
   <div class="card">
@@ -246,7 +253,7 @@
   <h3>All saved projects</h3>
   <div class="table-scroll"><table id="libProjects"></table></div>
 
-  <h3>All saved durability / service-life assessments</h3>
+  <h3>All saved durability and service life assessments</h3>
   <div class="table-scroll"><table id="libRuns"></table></div>
 </section>
 
