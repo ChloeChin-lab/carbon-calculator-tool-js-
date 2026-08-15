@@ -1,18 +1,5 @@
 /* =====================================================================
- * rulebook.js  —  Option C (Static Browser App)
- * ---------------------------------------------------------------------
- * The "rulebook" is everything that used to live in materials_database.xlsx
- * and service_life_new_tabs.xlsx, converted once into plain JavaScript
- * objects and shipped WITH the app. No server, no download, no Google Sheet.
- *
- * Every table below is a 1:1 port of the fallback tables in
- * service_life_engine.py, so Option C returns the same numbers as
- * Option A and Option B when those apps are running on fallback data.
- *
- * To replace this with the client's real spreadsheet, run:
- *     python tools/convert_excel_to_rulebook.py materials_database.xlsx
- * which overwrites js/rulebook_data.js.  If that file is present it wins;
- * this file is the safety net, exactly like get_refs() in Python.
+"EMPTY BOX"
  * ===================================================================== */
 
 var RULEBOOK = (function () {
