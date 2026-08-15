@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sustainability Assessment System — Option C (Static Browser App)</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">SAS</div>
+    <div>
+      <div class="brand-title">Sustainability Assessment System</div>
+      <div class="brand-sub">Option C &middot; runs entirely in this browser &middot; no server, no login</div>
+    </div>
+  </div>
+  <div class="status" id="statusBar">
+    <span class="chip" id="chipStorage">storage: checking…</span>
+    <span class="chip" id="chipRulebook">rulebook: checking…</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabBar">
+  <button class="tab active" data-tab="materials">1 &middot; Materials &amp; Mixes</button>
+  <button class="tab" data-tab="project">2 &middot; Project Builder</button>
+  <button class="tab" data-tab="durability">3 &middot; Durability &amp; Service Life</button>
+  <button class="tab" data-tab="comparison">4 &middot; Comparison &amp; Analysis</button>
+  <button class="tab" data-tab="library">5 &middot; My Library</button>
+</nav>
+
+<main>
+
+<!-- ================================================================ -->
+<!-- TAB 1 — MATERIALS & MIXES                                        -->
+<!-- ================================================================ -->
+<section class="panel active" id="tab-materials">
+  <h2>Materials &amp; Mixes</h2>
+  <p class="lede">The master library. Every mix is a recipe in kilogrammes per cubic metre.
+     The app multiplies each ingredient by its carbon factor and adds them up, which is
+     exactly what a spreadsheet would do — only it cannot be typed over by accident.</p>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>Standard materials</h3>
+      <label>Material or mix
+        <select id="matSelect"></select>
+      </label>
+      <div id="matBreakdown" class="breakdown"></div>
+    </div>
+
+    <div class="card">
+      <h3>Create a custom mix</h3>
+      <label>Mix name
+        <input type="text" id="mixName" placeholder="e.g. C50/60 with 40% GGBS">
+      </label>
+      <div id="mixIngredients" class="ingredients"></div>
+      <div class="row">
+        <button class="btn" id="btnCalcMix">Calculate this mix</button>
+        <button class="btn primary" id="btnSaveMix">Save mix</button>
+      </div>
+      <div id="mixResult" class="result-box"></div>
+      <h4>Saved custom mixes</h4>
+      <div id="savedMixList" class="chip-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- TAB 2 — PROJECT BUILDER                                          -->
+<!-- ================================================================ -->
+<section class="panel" id="tab-project">
+  <h2>Project Builder</h2>
+  <p class="lede">Pick a structure template, type the quantity of each material in each
+     component, and the app converts every quantity to a mass and then to embodied carbon.</p>
+
+  <div class="card">
+    <div class="row">
+      <label class="grow">Project name
+        <input type="text" id="projName" placeholder="e.g. Sungai Besi Viaduct — UHPC option">
+      </label>
+      <label class="grow">Structure template
+        <select id="structSelect"></select>
+      </label>
+      <button class="btn" id="btnBuildForm">Build form</button>
+    </div>
+  </div>
+
+  <div id="componentForms"></div>
+
+  <div class="row sticky-actions" id="projectActions" style="display:none">
+    <button class="btn primary" id="btnCalcProject">Calculate project totals</button>
+    <button class="btn" id="btnSaveProject">Save project</button>
+    <button class="btn ghost" id="btnClearProject">Clear</button>
+  </div>
+
+  <div id="projectResults"></div>
+</section>
+
+<!-- ================================================================ -->
+<!-- TAB 3 — DURABILITY & SERVICE LIFE                                -->
+<!-- ================================================================ -->
+<section class="panel" id="tab-durability">
+  <h2>Durability &amp; Service Life</h2>
+  <p class="lede">Six numbered steps, the same six as the desktop app and the same seven
+     sections as the cloud app. Nothing recalculates while you type — you press the button.</p>
+
+  <div class="step card">
+    <h3><span class="num">1</span> Select the assessed project</h3>
+    <div class="row">
+      <label class="grow">Saved project
+        <select id="durProject"></select>
+      </label>
+      <button class="btn" id="btnLoadMaterials">Load materials</button>
+    </div>
+    <div id="durMaterials"></div>
+    <div id="durConcretePick"></div>
+  </div>
+
+  <div class="step card">
+    <h3><span class="num">2</span> Exposure environment and cover rules</h3>
+    <div class="row">
+      <label class="grow">Exposure class (EN 206 / EN 1992-1-1)
+        <select id="durExposure"></select>
+      </label>
+      <div class="metric">
+        <div class="metric-label">Deterioration model</div>
+        <div class="metric-value" id="durMechanism">—</div>
+      </div>
+    </div>
+    <div class="row">
+      <label>Used design life (years)
+        <input type="number" id="durLife" value="100" step="5" min="1"></label>
+      <label>Allowance for deviation in cover (mm)
+        <input type="number" id="durAllowance" value="10" step="5" min="0"></label>
+      <label class="check">
+        <input type="checkbox" id="durQC"> Special quality control assured
+      </label>
+    </div>
+
+    <div id="carbInputs" class="row sub">
+      <label>Location type<select id="durLocation"></select></label>
+      <label>Local carbon dioxide factor k<sub>1</sub>
+        <input type="number" id="durK1" value="1.00" step="0.01"></label>
+      <label>Future carbon dioxide factor k<sub>2</sub>
+        <input type="number" id="durK2" value="1.40" step="0.05"></label>
+      <p class="hint">Site coefficient = reference coefficient &times; &radic;(k<sub>1</sub>k<sub>2</sub>).</p>
+    </div>
+
+    <div id="chlInputs" class="row sub" style="display:none">
+      <label>Distance from the coastline (km)
+        <input type="number" id="durDistance" value="0.001" step="0.001" min="0.001" max="10"></label>
+      <label>Airborne salt constant c<sub>1</sub>
+        <input type="number" id="durC1" value="0.60" step="0.05"></label>
+      <label>Surface chloride concentration (kg/m³)
+        <input type="number" id="durSurface" value="6.417" step="0.1"></label>
+      <p class="hint" id="chlHint"></p>
+    </div>
+  </div>
+
+  <div class="step card">
+    <h3><span class="num">3</span> Confirm the properties of each component and material</h3>
+    <div class="row">
+      <button class="btn" id="btnBuildGrid">Build / refresh input grid</button>
+      <span class="hint">Grey columns are calculated. Everything else can be overwritten.</span>
+    </div>
+    <div class="table-scroll"><table id="durGrid"></table></div>
+  </div>
+
+  <div class="step card">
+    <h3><span class="num">4</span> Run the assessment</h3>
+    <button class="btn primary big" id="btnRunAssessment">Run durability &amp; carbon efficiency assessment</button>
+  </div>
+
+  <div class="step card">
+    <h3><span class="num">5</span> Results</h3>
+    <div id="durSummary" class="summary"></div>
+    <h4>Durability check for each component</h4>
+    <div class="table-scroll"><table id="durDetail"></table></div>
+    <h4>Carbon efficiency for each material</h4>
+    <div class="table-scroll"><table id="durMaterialTable"></table></div>
+    <div class="row"><button class="btn ghost" id="btnExportDur">Download results as CSV</button></div>
+  </div>
+
+  <div class="step card">
+    <h3><span class="num">6</span> Save this assessment as a version</h3>
+    <div class="row">
+      <label class="grow">Version name
+        <input type="text" id="durVersionName" placeholder="e.g. XS1, 100 years, 45 mm cover"></label>
+      <button class="btn primary" id="btnSaveRun">Save assessment</button>
+    </div>
+    <h4>Earlier assessments of this project</h4>
+    <div id="durRunList"></div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- TAB 4 — COMPARISON & ANALYSIS                                    -->
+<!-- ================================================================ -->
+<section class="panel" id="tab-comparison">
+  <h2>Comparison &amp; Analysis</h2>
+  <div class="row">
+    <button class="btn seg active" data-cmp="mix">Compare materials &amp; mixes</button>
+    <button class="btn seg" data-cmp="project">Compare projects</button>
+  </div>
+
+  <div class="card" id="cmpMixPane">
+    <h3>Compare materials &amp; mixes</h3>
+    <p class="lede">Per cubic metre, like for like. The chart is drawn from the same numbers
+       as the table, so there is nothing to reconcile.</p>
+    <div id="cmpMixPick" class="chip-list"></div>
+    <button class="btn primary" id="btnCmpMix">Compare selected materials</button>
+    <div id="cmpMixOut"></div>
+  </div>
+
+  <div class="card" id="cmpProjectPane" style="display:none">
+    <h3>Compare projects</h3>
+    <p class="lede">Whole saved designs, side by side, on total mass and total embodied carbon.</p>
+    <div id="cmpProjPick" class="chip-list"></div>
+    <button class="btn primary" id="btnCmpProject">Compare selected projects</button>
+    <div id="cmpProjOut"></div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- TAB 5 — MY LIBRARY                                               -->
+<!-- ================================================================ -->
+<section class="panel" id="tab-library">
+  <h2>My Library</h2>
+  <p class="lede">Everything saved on this machine. Because there is no server, the backup
+     file below <em>is</em> your database — send it to a colleague and they see exactly
+     what you see.</p>
+
+  <div class="card">
+    <div class="row">
+      <button class="btn" id="btnRefreshLibrary">Refresh</button>
+      <button class="btn" id="btnExportAll">Download backup (.json)</button>
+      <label class="btn file-btn">Restore from backup
+        <input type="file" id="fileImport" accept="application/json" hidden>
+      </label>
+      <button class="btn danger ghost" id="btnClearAll">Erase everything on this machine</button>
+    </div>
+  </div>
+
+  <h3>All saved projects</h3>
+  <div class="table-scroll"><table id="libProjects"></table></div>
+
+  <h3>All saved durability / service-life assessments</h3>
+  <div class="table-scroll"><table id="libRuns"></table></div>
+</section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/rulebook_data.js"></script>
+<script src="js/rulebook.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
